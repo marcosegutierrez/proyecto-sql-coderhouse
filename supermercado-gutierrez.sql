@@ -92,6 +92,23 @@ CREATE TABLE ProductosxRemitos (
     foreign key(id_remito) references remitos(id_remito)  
 );
 
+/* Tablas de auditoria*/
+
+CREATE TABLE modificaciones_vendedores (
+	id_vendedor INT,
+    nombre VARCHAR(20),
+    apellido VARCHAR(20),
+    id_sucursal INT
+);
+
+CREATE TABLE productos_nuevos (
+	id_producto INT PRIMARY KEY,
+    nombre VARCHAR(50),
+    stock INT,
+    system_user VARCHAR(50),
+    time_insert DATETIME
+);
+
 /*************************** 
 	INSERCION DE DATOS
  ***************************/
@@ -668,7 +685,7 @@ INSERT INTO ProductosxRemitos (id_producto, id_remito, cantidad, precio) VALUES
 	VISTAS
  ***************************/
 
--- Queremos saber los clientes mayores para hacerles un descuento
+-- Queremos saber los clientes mayores para hacerles un descuento cada semana
 CREATE OR REPLACE VIEW clientes_mayores AS
 	(SELECT id_cliente, nombre, apellido
 	FROM clientes
@@ -678,7 +695,7 @@ SELECT * FROM clientes_mayores;
 
 -- Conocer los 5 mejores vendedores
 CREATE OR REPLACE VIEW mejores_vendedores AS
-	(SELECT v.id_vendedor, v.nombre, v.apellido, COUNT(c.id_compra) as ventas, ROUND(SUM(f.precio_total)) as monto
+	(SELECT v.id_vendedor, v.nombre, v.apellido, COUNT(c.id_compra) AS ventas, ROUND(SUM(f.precio_total)) AS monto
 	FROM vendedores v
 	INNER JOIN compras c ON (v.id_vendedor = c.id_vendedor)
 	INNER JOIN facturas f ON (f.id_compra = c.id_compra)
@@ -686,11 +703,37 @@ CREATE OR REPLACE VIEW mejores_vendedores AS
 
 SELECT * FROM mejores_vendedores;
 
+-- Ver los montos de las ultimas 10 compras que se han hecho
+CREATE OR REPLACE VIEW ultimas_10_compras AS (
+	SELECT precio_total, fecha, id_compra
+    FROM facturas
+    ORDER BY fecha
+    DESC LIMIT 10);
+
+SELECT * FROM ultimas_10_compras;
+
+-- Ver los 15 productos más vendidos
+CREATE OR REPLACE VIEW los_15_mas_vendidos AS (
+SELECT pc.id_producto, p.nombre, SUM(pc.cantidad) AS cantidad FROM productosxcompras pc
+INNER JOIN productos p ON (p.id_producto = pc.id_producto)
+GROUP BY id_producto
+ORDER BY cantidad DESC LIMIT 15);
+
+SELECT * FROM los_15_mas_vendidos;
+
+-- Ver los productos con stock menor al promedio
+CREATE OR REPLACE VIEW productos_menor_stock AS (
+	SELECT * FROM productos
+    WHERE stock < (SELECT AVG(stock) FROM productos)
+    ORDER BY stock ASC);
+    
+SELECT * FROM productos_menor_stock;
+
 /*************************** 
 	FUNCIONES
  ***************************/
 
--- Funcion para uso en PROCEDURE
+-- Funcion para uso en PROCEDURE `monto_de_sucursal`
 
 DELIMITER $$
 CREATE FUNCTION `Ventas_sucursal_x` (sucursal INT) RETURNS VARCHAR(20) READS SQL DATA
@@ -706,12 +749,24 @@ CREATE FUNCTION `Ventas_sucursal_x` (sucursal INT) RETURNS VARCHAR(20) READS SQL
 	END $$
 DELIMITER ;
 
-SELECT Ventas_sucursal_x(1) AS "Ventas de sucursal";
+SELECT Ventas_sucursal_x(1) AS "Ventas de sucursal"; -- Probar 1 a 10
+
+-- Obtener nombre y localidad de sucursal segun id de sucursal
+DELIMITER ??
+CREATE FUNCTION `datos_sucursal` (id INT) RETURNS VARCHAR(100) READS SQL DATA
+	BEGIN
+		RETURN  (
+			SELECT CONCAT(nombre, ' - ', localidad) FROM sucursales WHERE id_sucursal = id);
+	END ??
+DELIMITER ;
+
+SELECT datos_sucursal(10); -- Probar 1 a 10
 
 /*************************** 
 	PROCEDIMIENTOS ALMACENADOS
  ***************************/
 
+-- SP para ver los montos de cada sucursal junto al nombre de la misma
 DELIMITER //
 	CREATE PROCEDURE `monto_de_sucursal` (IN sucursal INT)
 	BEGIN
@@ -724,4 +779,39 @@ DELIMITER //
 	END //
 DELIMITER ;
 
-CALL monto_de_sucursal(5); -- Probar 1 a 10
+CALL monto_de_sucursal(4); -- Probar 1 a 10
+
+-- SP para insertar datos a Tabla productos
+DELIMITER $$
+	CREATE PROCEDURE `insercion_productos` (IN sp_nombre VARCHAR(50), IN sp_stock INT)
+    BEGIN
+		INSERT INTO productos (nombre, stock) VALUES (sp_nombre, sp_stock);
+        SELECT * FROM productos ORDER BY id_producto DESC LIMIT 1;
+    END $$
+DELIMITER ;
+
+CALL insercion_productos('Pimienta Negra',10);
+
+/*************************** 
+	TRIGGERS
+ ***************************/
+
+-- Trigger para identificar los valores anteriores a la modificacion de cada vendedor
+CREATE TRIGGER TR_modif_vendedores
+BEFORE UPDATE ON vendedores
+FOR EACH ROW
+INSERT INTO modificaciones_vendedores (id_vendedor, nombre, apellido, id_sucursal)
+VALUES (OLD.id_vendedor, OLD.nombre, OLD.apellido, OLD.id_sucursal);
+
+UPDATE vendedores SET id_sucursal = 3 WHERE id_vendedor = 3;
+SELECT * FROM modificaciones_vendedores;
+
+-- Trigger para los nuevos productos añadidos
+CREATE TRIGGER TR_productos_nuevos
+	AFTER INSERT ON productos
+	FOR EACH ROW
+	INSERT INTO productos_nuevos (system_user, time_insert, id_producto, nombre, stock)
+	VALUES (SYSTEM_USER(), NOW(), new.id_producto, new.nombre, new.stock);
+    
+CALL insercion_productos('Aceite de Oliva', 15);
+SELECT * FROM productos_nuevos;
