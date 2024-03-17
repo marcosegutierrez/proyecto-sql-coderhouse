@@ -1,4 +1,4 @@
-drop database supermercadogutierrez;
+DROP DATABASE IF EXISTS supermercadogutierrez;
 
 CREATE DATABASE IF NOT EXISTS supermercadoGutierrez;
 
@@ -95,7 +95,7 @@ CREATE TABLE ProductosxRemitos (
 /* Tablas de auditoria*/
 
 CREATE TABLE modificaciones_vendedores (
-	id_vendedor INT,
+	id_vendedor INT PRIMARY KEY,
     nombre VARCHAR(20),
     apellido VARCHAR(20),
     id_sucursal INT
@@ -107,6 +107,15 @@ CREATE TABLE productos_nuevos (
     stock INT,
     system_user VARCHAR(50),
     time_insert DATETIME
+);
+
+CREATE TABLE modificaciones_clientes (
+	id_cliente INT PRIMARY KEY,
+    nombre VARCHAR(20),
+    apellido VARCHAR(20),
+    dni INT,
+    system_user VARCHAR(50),
+    time_update DATETIME
 );
 
 /*************************** 
@@ -691,7 +700,9 @@ CREATE OR REPLACE VIEW clientes_mayores AS
 	FROM clientes
 	WHERE dni < 40000000);
 
+/* Prueba de vista
 SELECT * FROM clientes_mayores;
+*/
 
 -- Conocer los 5 mejores vendedores
 CREATE OR REPLACE VIEW mejores_vendedores AS
@@ -701,7 +712,9 @@ CREATE OR REPLACE VIEW mejores_vendedores AS
 	INNER JOIN facturas f ON (f.id_compra = c.id_compra)
 	GROUP BY (c.id_vendedor) ORDER BY monto DESC LIMIT 5);
 
+/* Prueba de vista
 SELECT * FROM mejores_vendedores;
+*/
 
 -- Ver los montos de las ultimas 10 compras que se han hecho
 CREATE OR REPLACE VIEW ultimas_10_compras AS (
@@ -709,8 +722,10 @@ CREATE OR REPLACE VIEW ultimas_10_compras AS (
     FROM facturas
     ORDER BY fecha
     DESC LIMIT 10);
-
+    
+/* Prueba de vista
 SELECT * FROM ultimas_10_compras;
+*/
 
 -- Ver los 15 productos más vendidos
 CREATE OR REPLACE VIEW los_15_mas_vendidos AS (
@@ -719,15 +734,30 @@ INNER JOIN productos p ON (p.id_producto = pc.id_producto)
 GROUP BY id_producto
 ORDER BY cantidad DESC LIMIT 15);
 
+/* Prueba de vista
 SELECT * FROM los_15_mas_vendidos;
+*/
 
 -- Ver los productos con stock menor al promedio
 CREATE OR REPLACE VIEW productos_menor_stock AS (
 	SELECT * FROM productos
     WHERE stock < (SELECT AVG(stock) FROM productos)
     ORDER BY stock ASC);
-    
+
+/* Prueba de vista    
 SELECT * FROM productos_menor_stock;
+*/
+
+-- Ver los clientes de apellido Simpson
+CREATE OR REPLACE VIEW clientes_simpson AS (
+	SELECT CL.id_cliente, nombre, apellido, precio_total AS "compras ($)" FROM clientes CL 
+	INNER JOIN compras CO ON (CL.id_cliente = CO.id_cliente)
+	INNER JOIN facturas FA ON (CO.id_compra = FA.id_compra)
+	WHERE CL.apellido = "Simpson"
+);
+
+-- Prueba de vista    
+-- SELECT * FROM clientes_simpson;
 
 /*************************** 
 	FUNCIONES
@@ -749,7 +779,9 @@ CREATE FUNCTION `Ventas_sucursal_x` (sucursal INT) RETURNS VARCHAR(20) READS SQL
 	END $$
 DELIMITER ;
 
-SELECT Ventas_sucursal_x(1) AS "Ventas de sucursal"; -- Probar 1 a 10
+-- Prueba de funcion
+-- SELECT Ventas_sucursal_x(1) AS "Ventas de sucursal"; -- Probar 1 a 10
+
 
 -- Obtener nombre y localidad de sucursal segun id de sucursal
 DELIMITER ??
@@ -760,7 +792,10 @@ CREATE FUNCTION `datos_sucursal` (id INT) RETURNS VARCHAR(100) READS SQL DATA
 	END ??
 DELIMITER ;
 
-SELECT datos_sucursal(10); -- Probar 1 a 10
+-- Prueba de funcion
+-- SELECT datos_sucursal(8); -- Probar 1 a 10
+
+
 
 /*************************** 
 	PROCEDIMIENTOS ALMACENADOS
@@ -779,7 +814,9 @@ DELIMITER //
 	END //
 DELIMITER ;
 
-CALL monto_de_sucursal(4); -- Probar 1 a 10
+-- Prueba de Procedimiento
+-- CALL monto_de_sucursal(7); -- Probar 1 a 10
+
 
 -- SP para insertar datos a Tabla productos
 DELIMITER $$
@@ -790,7 +827,8 @@ DELIMITER $$
     END $$
 DELIMITER ;
 
-CALL insercion_productos('Pimienta Negra',10);
+-- Prueba de Procedimiento
+-- CALL insercion_productos('Pimienta Negra',10);
 
 /*************************** 
 	TRIGGERS
@@ -803,8 +841,9 @@ FOR EACH ROW
 INSERT INTO modificaciones_vendedores (id_vendedor, nombre, apellido, id_sucursal)
 VALUES (OLD.id_vendedor, OLD.nombre, OLD.apellido, OLD.id_sucursal);
 
-UPDATE vendedores SET id_sucursal = 3 WHERE id_vendedor = 3;
-SELECT * FROM modificaciones_vendedores;
+-- Prueba de Trigger
+-- UPDATE vendedores SET id_sucursal = 3 WHERE id_vendedor = 3;
+-- SELECT * FROM modificaciones_vendedores;
 
 -- Trigger para los nuevos productos añadidos
 CREATE TRIGGER TR_productos_nuevos
@@ -813,5 +852,49 @@ CREATE TRIGGER TR_productos_nuevos
 	INSERT INTO productos_nuevos (system_user, time_insert, id_producto, nombre, stock)
 	VALUES (SYSTEM_USER(), NOW(), new.id_producto, new.nombre, new.stock);
     
-CALL insercion_productos('Aceite de Oliva', 15);
-SELECT * FROM productos_nuevos;
+-- Prueba de Trigger
+-- CALL insercion_productos('Aceite de Oliva', 15);
+-- SELECT * FROM productos_nuevos;
+
+-- Trigger para identificar los valores anteriores a la modificacion de cada cliente y los datos del usuario que ha hecho la modificacion
+CREATE TRIGGER TR_modif_clientes
+	BEFORE UPDATE ON clientes
+    FOR EACH ROW
+    INSERT INTO modificaciones_clientes (id_cliente, nombre, apellido, dni, system_user, time_update)
+    VALUES (OLD.id_cliente, OLD.nombre, OLD.apellido, OLD.dni, SYSTEM_USER(), CURRENT_TIMESTAMP());
+
+-- Prueba de Trigger
+-- UPDATE clientes SET nombre = "Homer" WHERE id_cliente = 6;
+-- SELECT * FROM modificaciones_clientes;
+
+/******************************************************************************* 
+	CREACIÓN DE USUARIOS CON DISTINTOS PERMISOS
+    PARA USAR ESTOS USUARIOS SE DEBERÁN CREAR NUEVAS CONECCIONES PARA CADA UNO
+ *******************************************************************************/
+
+-- CREATE USER "user1"@"localhost" identified by "123456";
+-- CREATE USER "user2"@"localhost" identified by "123456";
+
+/* Usuario 1 solo con permiso de SELECT en todas las tablas */
+-- GRANT SELECT ON supermercadogutierrez.* TO "user1"@"localhost";
+
+/* Usuario 2  con permisos SELECT y UPDATE en todas las tablas */
+-- GRANT SELECT, UPDATE ON supermercadogutierrez.* TO "user2"@"localhost";
+
+-- Para prueba usuario 2:
+/*
+SELECT * FROM supermercadogutierrez.clientes;
+USE supermercadogutierrez;
+UPDATE Clientes SET nombre = "Abuelo" WHERE id_cliente= 1;
+*/
+
+/* Ver usuarios de SGBD */
+-- USE MYSQL;
+-- SELECT * FROM USER;
+
+/* Modificacion de usuarios: */
+-- ALTER USER "user1"@"localhost" identified by "pass";
+
+/* Eliminacion de usuarios: */
+-- DROP USER "user1"@"localhost";
+-- DROP USER "user2"@"localhost";
